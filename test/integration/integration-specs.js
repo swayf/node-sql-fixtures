@@ -759,19 +759,58 @@ module.exports = function (dbConfig) {
         var knex = this.knex;
         var fg = this.fixtureGenerator;
 
-        fg.create(dataConfig, { unique: true }).then(function (results) {
-          expect(results.simple_table.length).to.equal(1);
-          knex("simple_table").then(function (result) {
-            expect(result.length).to.equal(1);
+        fg.create(dataConfig, { unique: true }).then(function (firstFixtureResult) {
+          expect(firstFixtureResult.simple_table.length).to.equal(1);
+          expect(firstFixtureResult.simple_table[0].id).to.be.a("number");
 
-            fg.create(dataConfig, { unique: true }).then(function (results) {
-              expect(results.simple_table.length).to.equal(0);
+          knex("simple_table").then(function (firstSelectResult) {
+            expect(firstSelectResult.length).to.equal(1);
 
-              knex("simple_table").then(function (result) {
-                expect(result.length).to.equal(1);
+            fg.create(dataConfig, { unique: true }).then(function (secondFixtureResult) {
+              expect(secondFixtureResult.simple_table.length).to.equal(1);
+              expect(secondFixtureResult.simple_table[0].id).to.equal(firstFixtureResult.simple_table[0].id);
+
+              knex("simple_table").then(function (secondSelectResult) {
+                expect(secondSelectResult.length).to.equal(1);
                 done();
               });
             });
+          });
+        });
+      });
+
+      // this is from a bug report here:
+      // https://github.com/city41/node-sql-fixtures/issues/48
+      //
+      // note that the bug report involves a self relation, so that is why this test
+      // is using has_foreign_key_to_itself, this bug almost certainly repros in
+      // just about any scenario though
+      it("should enable consecutive runs of the same spec when unique is true", function(done) {
+        var dataConfig = {
+          has_foreign_key_to_itself: [
+            {
+              string_column: "parent value",
+            },
+            {
+              string_column: "child value",
+              parent_id: "has_foreign_key_to_itself:0"
+            },
+          ],
+        };
+
+        var fg = this.fixtureGenerator;
+
+        fg.create(dataConfig, { unique: true }, function(err, results) {
+          expect(err).to.not.exist;
+          expect(results.has_foreign_key_to_itself[0].string_column).to.eql("parent value");
+          expect(results.has_foreign_key_to_itself[1].string_column).to.eql("child value");
+          expect(results.has_foreign_key_to_itself[1].parent_id).to.eql(
+            results.has_foreign_key_to_itself[0].id
+          );
+
+          fg.create(dataConfig, { unique: true }, function(err, results) {
+            expect(err).to.not.exist;
+            done();
           });
         });
       });
